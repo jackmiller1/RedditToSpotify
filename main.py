@@ -161,7 +161,7 @@ class RedditPlaylist():
 @click.option('--subreddit', default='listentothis', help="The subreddit to get tracks from")
 @click.option('--time', default='all', help="The time period to get the top tracks.", type=click.Choice(['all', 'year', 'month', 'week', 'day', 'hour']))
 @click.option('--username', help='Spotify username', prompt='Please enter your Spotify username', type=str)
-@click.option('--playlist_size', default=25, help='Size of the playlist to make', type=click.IntRange(1, 1000))
+@click.option('--playlist_size', default=25, help='Size of the playlist to make', type=click.IntRange(1, 100))
 @click.option('--playlist_name', default='listentothis', help='The name of the playlist to create.')
 @click.option('--replace_playlist', help="Whether the playlist should be cleared before adding new tracks.", is_flag=True)
 def main_cli(subreddit, time, username, playlist_size, playlist_name, replace_playlist):
