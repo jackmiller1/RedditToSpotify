@@ -17,3 +17,7 @@ Creates a playlist on spotify from songs posted on reddit
 1. Run the script
 
   ```python3 main.py --username USERNAME```
+  
+1. For help or a list of parameters, run
+  
+  ```python3 main.py --help```
