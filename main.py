@@ -1,17 +1,20 @@
 import re
 from collections import namedtuple
-from enum import Enum 
 
+from diskmemo import DiskMemoize
 import praw
 import spotipy
-import spotipy.util as util
+import spotipy.util
 import click
 
 Track = namedtuple('Track', ['track', 'artist'])
-
+       
 class RedditPlaylist():
 
-    ## Regular expression to parse a reddit post's title
+    ## Memoize the spotify uri for tracks
+    TrackMemoize = DiskMemoize('tracks.pickle', cache_filter=lambda t: t is not None)
+
+    ## Regular expression to parse a reddit post's title)
     ## In the form "artistName -- trackName [genre / genres] (year)"
     title_re = re.compile(r"(?P<artist>.*?) -+ (?P<track>.*?) \[(?P<genre>.*?)\] \((?P<year>\d+)\)")
 
@@ -33,15 +36,14 @@ class RedditPlaylist():
         ## Spotify username
         self.username = username
 
-        self.spotify = self.__login_to_spotify()
+        self.spotify = self.login_to_spotify()
 
         ## Whether the playlist should be cleared before adding new tracks
         self.replace_playlist = replace_playlist
 
-
     ## Attempts to login to spotify
-    def __login_to_spotify(self):
-        token = util.prompt_for_user_token(self.username, scope='playlist-modify-public')
+    def login_to_spotify(self):
+        token = spotipy.util.prompt_for_user_token(self.username, scope='playlist-modify-public')
         if token:
             return spotipy.Spotify(auth=token)
         else:
@@ -49,67 +51,69 @@ class RedditPlaylist():
 
     ## Extracts the artist and track from the title of a post.
     ## Possible to also get genre and year.
-    def __parse_title(self, title):
-        a = re.match(RedditPlaylist.title_re, title)
-        if a != None:
-            return Track(a.group('track'), a.group('artist'))
+    def parse_title(self, title):
+        parsed_title = re.match(RedditPlaylist.title_re, title)
+        if parsed_title != None:
+            return Track(parsed_title.group('track'), parsed_title.group('artist'))
 
 
     ## Fetches the posts from the subreddit
     ## param: last_id   The reddit ID of the last post from a previous query
-    def __get_posts(self, last_id=None):
+    def get_posts(self, last_id=None):
         sub = self.reddit.get_subreddit(self.subreddit)    
         ## Map a time period to a function
         funcs = {
-            'all': sub.get_top_from_all,
-            'day': sub.get_top_from_day,
-            'hour': sub.get_top_from_hour,
-            'month': sub.get_top_from_month,
-            'week': sub.get_top_from_week,
-            'year': sub.get_top_from_year
+            'hot': sub.get_hot,
+            'new': sub.get_new,
+            'top_all': sub.get_top_from_all,
+            'top_day': sub.get_top_from_day,
+            'top_hour': sub.get_top_from_hour,
+            'top_month': sub.get_top_from_month,
+            'top_week': sub.get_top_from_week,
+            'top_year': sub.get_top_from_year
         }
         if last_id != None:
-            return list(funcs.get(self.time_period, sub.get_top_from_all)(limit = self.playlist_size, params={'after': 't3_'+last_id}))
+            return list(funcs.get(self.time_period, sub.get_hot)(limit = self.playlist_size, params={'after': 't3_'+last_id}))
         else:
-            return list(funcs.get(self.time_period, sub.get_top_from_all)(limit = self.playlist_size))
+            return list(funcs.get(self.time_period, sub.get_hot)(limit = self.playlist_size))
 
     ## Parses the artist and track from every post in 'posts' array
-    def __parse_posts(self, posts):
-        tracks = []
-        for post in posts:
-            t = self.__parse_title(post.title)
-            if t != None:
-                tracks.append(t)
-        return tracks
+    def parse_posts(self, posts):
+        tracks = [self.parse_title(post.title) for post in posts]
+        return [track for track in tracks if track is not None]
 
     ## Searchs for tracks on spotify.  Returns an array of spotify IDs for found tracks
-    def __get_spotify_tracks(self, tracks):
-        found_tracks = []
-        for track in tracks:
-            query = "artist:'{artist}' track:'{track}'".format(artist=track.artist, track=track.track)
-            results = self.spotify.search(query, type="track", limit=1)
-            if results['tracks']['total'] > 0:
-                found_tracks.append(results['tracks']['items'][0]['uri'])
-        return found_tracks
+    def get_spotify_tracks(self, tracks):
+        found_tracks = [self.get_spotify_track_uri(track) for track in tracks]
+        return [track for track in found_tracks if track is not None]
+
+    ## Queries spotify for a track and returns the 
+    @TrackMemoize
+    def get_spotify_track_uri(self, track):
+        uri = None
+        query = "artist:'{artist}' track:'{track}'".format(artist=track.artist, track=track.track)
+        results = self.spotify.search(query, type="track", limit=1)
+        if results['tracks']['total'] > 0:
+            uri = results['tracks']['items'][0]['uri']
+        return uri
 
     ## Finds enough tracks on spotify to fill a playlist with the size 'self.playlist_size'
-    def __find_tracks(self):
+    def find_tracks(self):
         tracks = []
         last_id = None
         while len(tracks) < self.playlist_size:
-            posts = self.__get_posts(last_id=last_id)
+            posts = self.get_posts(last_id=last_id)
             ## If there are no more posts to look at, return the tracks found so far
             if len(posts) == 0:
                 return tracks
-
             last_id = posts[-1].id
-            found_tracks = self.__parse_posts(posts)
-            tracks.extend(self.__get_spotify_tracks(found_tracks))
+            found_tracks = self.parse_posts(posts)
+            tracks.extend(self.get_spotify_tracks(found_tracks))
         return tracks[:self.playlist_size]
 
 
     ## Finds the playlist with a specific name or returns None if not found
-    def __find_playlist(self):
+    def find_playlist(self):
         playlists = self.spotify.user_playlists(self.username)['items']
         for playlist in playlists:
             if playlist['name'] == self.playlist_name and playlist['owner']['id'] == self.username:
@@ -117,7 +121,7 @@ class RedditPlaylist():
         return None
 
     ## Returns a list of track ids in the playlist
-    def __playlist_track_ids(self, playlist_id):
+    def playlist_track_ids(self, playlist_id):
         tracks = []
         results = self.spotify.user_playlist(self.username, playlist_id, fields='tracks,next')['tracks']
         tracks.extend([track['track']['uri'] for track in results['items']])
@@ -128,8 +132,8 @@ class RedditPlaylist():
 
     ## Adds the tracks to a playlist
     ## Returns the number added to the playlist
-    def __add_to_playlist(self, tracks):
-        playlist = self.__find_playlist()
+    def add_to_playlist(self, tracks):
+        playlist = self.find_playlist()
         if playlist == None:
             playlist = self.spotify.user_playlist_create(self.username, self.playlist_name)
         
@@ -138,14 +142,15 @@ class RedditPlaylist():
                 self.spotify.user_playlist_replace_tracks(self.username, playlist.get('id'), tracks)
             else:
                 ## Get the current tracks in playlist and only add new ones
-                current_tracks = self.__playlist_track_ids(playlist.get('id'))
+                current_tracks = self.playlist_track_ids(playlist.get('id'))
                 new_tracks = set(tracks).difference(current_tracks)
                 if len(new_tracks) > 0:
                     self.spotify.user_playlist_add_tracks(self.username, playlist.get('id'), new_tracks)
 
     ## Creates a playlist from a subreddit with a desired length
     def make_playlist(self):
-        tracks = self.__find_tracks()
+        tracks = self.find_tracks()
+        
         formatting_dict = {
             'track_count': len(tracks), 
             'playlist_name': self.playlist_name
@@ -155,11 +160,12 @@ class RedditPlaylist():
         else:
             print("Adding {track_count} tracks to '{playlist_name}'".format(**formatting_dict))
 
-        self.__add_to_playlist(tracks)
+        self.add_to_playlist(tracks)
+        RedditPlaylist.TrackMemoize.save_cache()
 
 @click.command()
 @click.option('--subreddit', default='listentothis', help="The subreddit to get tracks from")
-@click.option('--time', default='all', help="The time period to get the top tracks.", type=click.Choice(['all', 'year', 'month', 'week', 'day', 'hour']))
+@click.option('--time', default='hot', help="The time period to get the top tracks.", type=click.Choice(['hot', 'new', 'top_all', 'top_year', 'top_month', 'top_week', 'top_day', 'top_hour']))
 @click.option('--username', help='Spotify username', prompt='Please enter your Spotify username', type=str)
 @click.option('--playlist_size', default=25, help='Size of the playlist to make', type=click.IntRange(1, 100))
 @click.option('--playlist_name', default='listentothis', help='The name of the playlist to create.')
