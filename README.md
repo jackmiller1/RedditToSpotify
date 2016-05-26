@@ -1,5 +1,7 @@
 # RedditToSpotify
-Creates a playlist on spotify from songs posted on reddit
+Creates a playlist on spotify from songs posted on reddit.  
+
+The diskmemo class memoizes a function and saves the cache to disk.  This was added so the script could be run as a cron job and prevent tracks from having to be looked up on spotify multiple times.  This also allows multiple scripts to share the same cache.
 
 ## Getting Started
 1. Create an application on https://developer.spotify.com 
@@ -28,8 +30,8 @@ Usage: main.py [OPTIONS]
 
 Options:
   --subreddit TEXT                The subreddit to get tracks from
-  --time [all|year|month|week|day|hour]
-                                  The time period to get the top tracks.
+  --time [hot|new|top_all|top_year|top_month|top_week|top_day|top_hour]
+                                  The sorting method for the tracks
   --username TEXT                 Spotify username
   --playlist_size INTEGER RANGE   Size of the playlist to make
   --playlist_name TEXT            The name of the playlist to create.

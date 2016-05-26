@@ -165,7 +165,7 @@ class RedditPlaylist():
 
 @click.command()
 @click.option('--subreddit', default='listentothis', help="The subreddit to get tracks from")
-@click.option('--time', default='hot', help="The time period to get the top tracks.", type=click.Choice(['hot', 'new', 'top_all', 'top_year', 'top_month', 'top_week', 'top_day', 'top_hour']))
+@click.option('--time', default='hot', help="The sorting method for the tracks", type=click.Choice(['hot', 'new', 'top_all', 'top_year', 'top_month', 'top_week', 'top_day', 'top_hour']))
 @click.option('--username', help='Spotify username', prompt='Please enter your Spotify username', type=str)
 @click.option('--playlist_size', default=25, help='Size of the playlist to make', type=click.IntRange(1, 100))
 @click.option('--playlist_name', default='listentothis', help='The name of the playlist to create.')
